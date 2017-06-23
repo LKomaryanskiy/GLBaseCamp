@@ -17,7 +17,7 @@ typedef struct {
 static bool is_correct_address_str(char address[])
 {
 	bool result = true;
-	size_t curr_part = 0;
+	size_t curr_part = 1;
 	size_t i = 0;
 	size_t curr_part_lenght = 0;
 
@@ -41,8 +41,11 @@ static bool is_correct_address_str(char address[])
 
 		++i;
 	}
-	
 
+	if (curr_part != parts) 
+		result = false;
+
+	
 	return result;
 }
 
@@ -63,7 +66,7 @@ static uint32_t parse_address(char address[])
 			++i;
 		k = i;
 		--i;
-
+		
 		while (i >= 0 && address[i] != '.') {
 			buf_str[j] = address[i]; 
 			--i;
