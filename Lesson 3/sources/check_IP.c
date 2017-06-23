@@ -35,6 +35,9 @@ static bool is_correct_address_str(char address[])
 			result = false;
 
 		if (address[i] == '.') {
+			if (curr_part_lenght == 1)
+				result = false;
+
 			++curr_part;
 			curr_part_lenght = 0;
 		} 
