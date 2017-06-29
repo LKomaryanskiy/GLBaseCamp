@@ -1,7 +1,7 @@
 /*
  * Code written for Arduino Mega 2560
  * Input - PORT E4 (Pin 2)
- * Output - PROT B7 (Pin 13, LED)
+ * Output - PORT B7 (Pin 13, LED)
  * I chose E4 port, because ports 2, 3, 18, 19, 20, 21
  * (for Arduino Mega 2560)can used for interruptions.
  */
@@ -28,12 +28,8 @@ static const unsigned int AMOUNT_OF_MODES = 2;
 static const unsigned int DELAY = 1000;
 /*B7 (13 pin)*/
 static const unsigned int OUTPUT_PIN = (0x01 << 7);
+/*E4 (2 pin)*/
 static const unsigned int INPUT_PIN = (0x01 << 2);
-/*
-   Using for the port B6 input pin register (read only).
-   I use PINB instead PORTB because i can't
-   read the data of PORTB.
-*/
 static LED_mode curr_mode = blinking;
 
 void delay_10mcseconds(unsigned int delay_mcs)
