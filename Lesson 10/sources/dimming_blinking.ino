@@ -10,9 +10,8 @@
 typedef enum _LED_mode {
   blinking,
   dimming,
+  AMOUNT_OF_MODES,
 } LED_mode;
-
-static const unsigned int AMOUNT_OF_MODES = 2;
 
 /*
   Delay can be number in range 1 to 100000 ms.
@@ -54,7 +53,7 @@ void next_mode(void)
   // If interrupts come faster than 200ms, assume it's a bounce and ignore
   if (interrupt_time - last_interrupt_time > 200) 
   {
-    curr_mode = (((int)curr_mode) + 1) % AMOUNT_OF_MODES;
+    curr_mode = (LED_mode)((curr_mode + 1) % AMOUNT_OF_MODES);
   }
   last_interrupt_time = interrupt_time;
   interrupts();
