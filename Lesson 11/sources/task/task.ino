@@ -30,7 +30,7 @@ static const unsigned int led_delay_min = 25;
 static const unsigned int OUTPUT_PIN = (0x01 << 7);
 /*E4 (2 pin)*/
 static const unsigned int INPUT_PIN = (0x01 << 2);
-static LED_mode curr_mode = blinking;
+static LED_mode curr_mode = dimming;
 
 void delay_10mcseconds(unsigned int delay_mcs)
 {
@@ -61,6 +61,11 @@ void next_mode(void)
   /*TODO: Restore SREG state*/
 }
 
+void timer_init(void)
+{
+ TCCR0A |= (0x01 << 7);
+}
+
 void ports_init(void)
 {
   /*Initialize LED port (B7) for output */
@@ -82,6 +87,12 @@ void led_off(void)
   PORTB &= (~OUTPUT_PIN);
 }
 
+/*Value can be number in range 0 to 255*/
+void analog_write_LED(int value)
+{
+  OCR0A = value;
+}
+
 void blinking_mode(void)
 {
   led_on();
@@ -92,13 +103,22 @@ void blinking_mode(void)
 
 void dimming_mode(void)
 {
-  /*TODO: Rewrite using PWM*/
+  static int dimm_amount = 5;
+  static const unsigned int inside_delay = (dimm_amount * led_delay) / 255; 
+  static int value = 0;
+  value += dimm_amount;
+  if (value >= 255 || value <= 0) 
+    dimm_amount =-dimm_amount;
+  
+  analog_write_LED(value);
+  delay_mseconds(inside_delay);
 }
 
 void setup(void)
 {
   Serial.begin(115200);
   ports_init();
+  timer_init();
 }
 
 void loop(void)
