@@ -16,11 +16,11 @@ OUT     := main.hex
 
 all: $(OUT)
 
-flash: all
+flash: $(OUT)
 	$(AVRDUDE) -U flash:w:$<:i
 
 clean:
-	-rm -f $(OUT) $(TMPOUT) $(OBJECTS)
+	$(RM) $(OUT) $(TMPOUT) $(OBJECTS)
 
 $(OUT): $(OBJECTS)
 	$(CC) $(CFLAGS) -o $(TMPOUT) $^
