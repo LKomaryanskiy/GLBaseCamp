@@ -4,10 +4,10 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
-
-#define SET_BIT(x, n) ((x) |= (0x01 << (n)))
-#define RESET_BIT(x, n) ((x) &= ~(0x01 << (n)))
-#define IS_BIT_SET(x, n) ((x) & (0x01 << (n)) >> (n))
+/*Set bit*/
+#define sbi(x, n) ((x) |= (0x01 << (n)))
+/*Clean bit*/
+#define cbi(x, n) ((x) &= ~(0x01 << (n)))
 
 
 static void delay_ms(uint16_t delay)
@@ -25,8 +25,8 @@ static void init_usart(const uint32_t baudrate)
 
 	UBRR0L = (uint8_t)(ubrr & 0xFF);
 	UBRR0H = (uint8_t)((ubrr >> 8) & 0xFF);
-	SET_BIT(UCSR0A, U2X0);
-	SET_BIT(UCSR0B, TXEN0);
+	sbi(UCSR0A, U2X0);
+	sbi(UCSR0B, TXEN0);
 
 	UCSR0C = (3 << UCSZ00);
 }
@@ -53,41 +53,123 @@ static size_t send_usart_message(const char mess[])
 #define LED_TCCR TCCR0A
 #define LED_COM COM0A1
 
+static uint8_t led_bright = 0;
+static bool led_is_enabled = true;
+
 static void init_led(void)
 {
-	SET_BIT(LED_DDR, LED_BIT);
+	sbi(LED_DDR, LED_BIT);
 }
 
 static void init_timer(void)
 {
-	/*Enable counter without prescaler*/
-	TCCR0B = 0x01;
+	/*Enable counter from prescaler clk/64*/
+	TCCR0B = 0x03;
 
-	SET_BIT(LED_TCCR, LED_COM);
-	SET_BIT(LED_TCCR, WGM01);
-	SET_BIT(LED_TCCR, WGM00);
+	sbi(LED_TCCR, LED_COM);
+	sbi(LED_TCCR, WGM01);
+	sbi(LED_TCCR, WGM00);
 }
 
 static void set_led_brightness(uint8_t bright)
 {
-	LED_OCR = bright;
+	if (led_is_enabled)
+		LED_OCR = bright;
+	else
+		LED_OCR = 0x00;
 }
 
 /*12 pin*/
-#define BUTTON_DDR DDRB
-#define BUTTON_PORT PORTB
-#define BUTTON_PIN PINB
+#define ENCODER_DDR DDRB
+#define ENCODER_PORT PORTB
+#define ENCODER_PIN PINB
+#define ROTA_BIT 4
+#define ROTB_BIT 5
 #define BUTTON_BIT 6
+#define ENCODER_PCIE 1
+#define ENCODER_PCMSK PCMSK0
+#define ENCODER_PCINT_vect PCINT0_vect
 
-static void init_button(void)
+/*Encoder parameter*/
+static const uint16_t ONE_LAP = 40;
+static uint8_t encoder_curr_state = 0;
+
+static void init_encoder(void)
 {
-	RESET_BIT(BUTTON_DDR, BUTTON_BIT);
-	SET_BIT(BUTTON_PIN, BUTTON_BIT);
+	PCICR = ENCODER_PCIE;
+	sbi(ENCODER_PCMSK, ROTA_BIT);
+	sbi(ENCODER_PCMSK, ROTB_BIT);
+	sbi(ENCODER_PCMSK, BUTTON_BIT);
+
+	cbi(ENCODER_DDR, ROTA_BIT);
+	cbi(ENCODER_DDR, ROTB_BIT);
+	cbi(ENCODER_DDR, BUTTON_BIT);
+
+	sbi(ENCODER_PIN, ROTA_BIT);
+	sbi(ENCODER_PIN, ROTB_BIT);
+	sbi(ENCODER_PIN, BUTTON_BIT);
 }
 
-static bool is_button_pressed(void)
+static void recalculate_bright(void)
 {
-	return (IS_BIT_SET(BUTTON_PIN, BUTTON_BIT));
+	led_bright = encoder_curr_state * (255 / ONE_LAP);
+}
+
+static void reduce_bright(void)
+{
+	if (encoder_curr_state > 0)
+		--encoder_curr_state;
+	recalculate_bright();
+}
+
+static void increase_bright(void)
+{
+	if (encoder_curr_state <= ONE_LAP)
+		++encoder_curr_state;
+	recalculate_bright();
+}
+
+static void button(void)
+{
+	static bool prev_state_pressed = false;
+	if (prev_state_pressed)
+		led_is_enabled = !led_is_enabled;
+	prev_state_pressed = !prev_state_pressed;
+}
+
+ISR(ENCODER_PCINT_vect)
+{
+	//send_usart_message("Interrupt\n\r");
+	static bool is_rot = true;
+	uint8_t save_SREG = SREG;
+	static uint8_t pins_prev_status = 0;
+	const uint8_t input_pin_mask = (0x01 << ROTA_BIT) | \
+			(0x01 << ROTB_BIT) | (0x01 << BUTTON_BIT);
+	uint8_t pins_curr_status = ~ENCODER_PIN & input_pin_mask;
+
+	switch (pins_prev_status ^ pins_curr_status){
+		case (0x01 << ROTA_BIT): {
+			if (is_rot)
+				increase_bright();
+			is_rot = !is_rot;
+			break;
+		}
+		case (0x01 << ROTB_BIT): {
+			if (is_rot)
+				reduce_bright();
+			is_rot = !is_rot;
+			break;
+		}
+		case (0x01 << BUTTON_BIT): {
+			button();
+			break;
+		}
+		default:
+			break;
+	}
+
+	pins_prev_status = pins_curr_status;
+	SREG = save_SREG;
 }
 
 #define SERIAL_BAUDRATE 115200
@@ -99,6 +181,7 @@ void setup(void)
 	init_led();
 	init_usart(SERIAL_BAUDRATE);
 	init_timer();
+	init_encoder();
 
 	sei();
 }
@@ -106,13 +189,8 @@ void setup(void)
 void loop(void)
 {
 	delay_ms(50);
-	volatile static uint16_t brightness = 0;
-
 	/*send_usart_message("It works!\n\r");*/
-	set_led_brightness(brightness);
-	brightness += 1;
-	if (brightness >= 255)
-		brightness = 0;
+	set_led_brightness(led_bright);
 }
 
 int main(void)
