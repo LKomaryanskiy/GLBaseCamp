@@ -9,13 +9,28 @@
 /*Clean bit*/
 #define cbi(x, n) ((x) &= ~(0x01 << (n)))
 
-
 static void delay_ms(uint16_t delay)
 {
 	while (delay--) {
 		volatile uint16_t cycles = 8.656 * delay;
 		while (cycles--);
 	}
+}
+
+/*Instruments for USART*/
+#define USART_BUFFER_SIZE 256
+static char usart_buffer[USART_BUFFER_SIZE];
+static uint16_t usart_curr_message_length = 0;
+static uint16_t usart_curr_buf_index = 0;
+
+static void enable_tx_usart_interrupt(void)
+{
+	sbi(UCSR0B, TXCIE0);
+}
+
+static void disable_tx_uasrt_interrupt(void)
+{
+	cbi(UCSR0B, TXCIE0);
 }
 
 static void init_usart(const uint32_t baudrate)
@@ -27,23 +42,61 @@ static void init_usart(const uint32_t baudrate)
 	UBRR0H = (uint8_t)((ubrr >> 8) & 0xFF);
 	sbi(UCSR0A, U2X0);
 	sbi(UCSR0B, TXEN0);
+	disable_tx_uasrt_interrupt();
 
 	UCSR0C = (3 << UCSZ00);
 }
 
-static size_t send_usart_message(const char mess[])
+/*DEBUG*/
+static void print_polling(const char mess[])
 {
 	size_t i = 0;
-	const size_t length = strlen(mess);
-
-	for (i = 0; i < length; ++i) {
+	size_t N = strlen(mess);
+	for (i = 0; i < N; ++i){
 		UDR0 = mess[i];
-		while(!(UCSR0A & (1 << UDRE0)));
+		while (!(UCSR0A & (1 << UDRE0)));
 	}
-
-	return length;
 }
 
+static void send_usart_symbol()
+{
+	UDR0 = usart_buffer[usart_curr_buf_index];
+	++usart_curr_buf_index;
+	usart_curr_buf_index = (usart_curr_buf_index) % \
+								USART_BUFFER_SIZE;
+	--usart_curr_message_length;
+}
+
+static void send_usart_message(const char mess[])
+{
+	/*
+	 *	Copy message to cyclic buffer and then enable interrupts.
+	 *	Mod of USART_BUFFER_SIZE prevents buffer overflowing.
+	 */
+	//print_polling("SENDING MESSAGE!\n\r");
+	disable_tx_uasrt_interrupt();
+	const size_t length = (strlen(mess)) % (USART_BUFFER_SIZE - \
+			usart_curr_message_length);
+	size_t i = 0;
+	for (i = 0; i < length; ++i){
+		size_t index = (usart_curr_buf_index + i) % USART_BUFFER_SIZE;
+		usart_buffer[index] = mess[i];
+	}
+	usart_curr_message_length += length;
+	enable_tx_usart_interrupt();
+	send_usart_symbol();
+}
+
+ISR(USART0_TX_vect)
+{
+	send_usart_symbol();
+	if (usart_curr_message_length)
+		enable_tx_usart_interrupt();
+	else
+		disable_tx_uasrt_interrupt();
+}
+
+/*LED & timer*/
 /*13 pin*/
 #define LED_DDR DDRB
 #define LED_PORT PORTB
@@ -79,6 +132,7 @@ static void set_led_brightness(uint8_t bright)
 		LED_OCR = 0x00;
 }
 
+/*Encoder*/
 /*12 pin*/
 #define ENCODER_DDR DDRB
 #define ENCODER_PORT PORTB
@@ -139,7 +193,6 @@ static void button(void)
 
 ISR(ENCODER_PCINT_vect)
 {
-	//send_usart_message("Interrupt\n\r");
 	static bool is_rot = true;
 	uint8_t save_SREG = SREG;
 	static uint8_t pins_prev_status = 0;
@@ -172,6 +225,7 @@ ISR(ENCODER_PCINT_vect)
 	SREG = save_SREG;
 }
 
+
 #define SERIAL_BAUDRATE 115200
 
 void setup(void)
@@ -188,8 +242,8 @@ void setup(void)
 
 void loop(void)
 {
-	delay_ms(50);
-	/*send_usart_message("It works!\n\r");*/
+	delay_ms(200);
+	send_usart_message("It works!\n\r");
 	set_led_brightness(led_bright);
 }
 
